@@ -304,12 +304,49 @@ function Invoke-PlasterUnchained {
             $runspace
         }
 
+        function NewUnConstrainedRunspace() {
+            $iss = [System.Management.Automation.Runspaces.InitialSessionState]::CreateDefault()
+            if (!$IsCoreCLR) {
+                $iss.ApartmentState = [System.Threading.ApartmentState]::STA
+            }
+
+            $scopedItemOptions = [System.Management.Automation.ScopedItemOptions]::AllScope
+            $plasterVars = Get-Variable -Name PLASTER_*,PSVersionTable
+            if (Test-Path Variable:\IsLinux) {
+                $plasterVars += Get-Variable -Name IsLinux
+            }
+            if (Test-Path Variable:\IsOSX) {
+                $plasterVars += Get-Variable -Name IsOSX
+            }
+            if (Test-Path Variable:\IsMacOS) {
+                $plasterVars += Get-Variable -Name IsMacOS
+            }
+            if (Test-Path Variable:\IsWindows) {
+                $plasterVars += Get-Variable -Name IsWindows
+            }
+            foreach ($var in $plasterVars) {
+                $ssve = New-Object System.Management.Automation.Runspaces.SessionStateVariableEntry `
+                            $var.Name,$var.Value,$var.Description,$scopedItemOptions
+                $iss.Variables.Add($ssve)
+            }
+
+            # Create new runspace with the above defined entries. Then open and set its working dir to $destinationAbsolutePath
+            # so all condition attribute expressions can use a relative path to refer to file paths e.g.
+            # condition="Test-Path src\${PLASTER_PARAM_ModuleName}.psm1"
+            $runspace = [System.Management.Automation.Runspaces.RunspaceFactory]::CreateRunspace($iss)
+            $runspace.Open()
+            if ($destinationAbsolutePath) {
+                $runspace.SessionStateProxy.Path.SetLocation($destinationAbsolutePath) > $null
+            }
+            $runspace
+        }
+
         function ExecuteExpressionImpl([string]$Expression) {
             try {
                 $powershell = [PowerShell]::Create()
 
                 if ($null -eq $constrainedRunspace) {
-                    $constrainedRunspace = NewConstrainedRunspace
+                    $constrainedRunspace = NewUnConstrainedRunspace
                 }
                 $powershell.Runspace = $constrainedRunspace
 
